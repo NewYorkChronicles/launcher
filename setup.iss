@@ -1,6 +1,6 @@
 [Setup]
 AppName=New York Chronicles
-AppVersion=1.0.0
+AppVersion=1.2.0
 AppPublisher=New York Chronicles
 DefaultDirName={autopf32}\New York Chronicles
 DefaultGroupName=New York Chronicles
@@ -54,25 +54,17 @@ Source: "NYCLauncher\bin\Release\net48\Downloader.dll"; DestDir: "{app}"; Flags:
 ; Chromium locales
 Source: "NYCLauncher\bin\Release\net48\locales\*.pak"; DestDir: "{app}\locales"; Flags: ignoreversion
 
-[Dirs]
-Name: "{commonappdata}\New York Chronicles\1.6"
-Name: "{commonappdata}\New York Chronicles\Common"
-
 [Icons]
 Name: "{group}\New York Chronicles"; Filename: "{app}\Launcher.exe"
 Name: "{group}\Uninstall New York Chronicles"; Filename: "{uninstallexe}"
 Name: "{commondesktop}\New York Chronicles"; Filename: "{app}\Launcher.exe"; Tasks: desktopicon
 
 [Registry]
-; Register nyc:// protocol → points to game.exe
-; Used for reconnect / server connect when game.exe handles the URI directly.
 Root: HKCR; Subkey: "nyc"; ValueType: string; ValueData: "URL:NYC Protocol"; Flags: uninsdeletekey
 Root: HKCR; Subkey: "nyc"; ValueName: "URL Protocol"; ValueType: string; ValueData: ""
 Root: HKCR; Subkey: "nyc\DefaultIcon"; ValueType: string; ValueData: """{app}\game\game.exe"",0"
 Root: HKCR; Subkey: "nyc\shell\open\command"; ValueType: string; ValueData: """{app}\game\game.exe"" ""%1"""
 
-; Register nycl:// protocol → points to Launcher.exe
-; Used to open the launcher from browser / external links.
 Root: HKCR; Subkey: "nycl"; ValueType: string; ValueData: "URL:NYC Launcher Protocol"; Flags: uninsdeletekey
 Root: HKCR; Subkey: "nycl"; ValueName: "URL Protocol"; ValueType: string; ValueData: ""
 Root: HKCR; Subkey: "nycl\DefaultIcon"; ValueType: string; ValueData: """{app}\Launcher.exe"",0"
