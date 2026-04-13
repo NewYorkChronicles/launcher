@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>New York Chronicles</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Outfit',sans-serif;background:#0d0d0d;color:#fff;width:1000px;height:700px;overflow:hidden;position:relative;user-select:none;-webkit-user-select:none;-webkit-user-drag:none}
+.bg{position:absolute;inset:0;z-index:0;background:#0d0d0d}
+.bg::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 5% 90%,rgba(196,24,24,.07) 0%,transparent 50%);filter:blur(40px)}
+.bg::after{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 95% 10%,rgba(110,10,10,.05) 0%,transparent 50%);filter:blur(40px)}
+.topbar{position:relative;z-index:10;display:flex;align-items:center;justify-content:space-between;padding:0 24px;height:68px;background:rgba(0,0,0,.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-bottom:1px solid rgba(255,255,255,.04)}
+.logo{display:flex;align-items:center;gap:10px}
+.logo img{width:34px;height:34px;opacity:.75}
+.desc{color:rgba(255,255,255,.2);font-size:11px;line-height:1.5;max-width:200px;font-weight:300}
+.topbar-r{display:flex;align-items:center;gap:5px;margin-left:auto;position:relative;z-index:50}
+.topbar-r .ic{width:30px;height:30px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:rgba(255,255,255,.25);font-size:13px;border-radius:4px;transition:all .15s;border:none;background:none}
+.topbar-r .ic:hover{color:rgba(255,255,255,.6);background:rgba(255,255,255,.04)}
+.topbar-r .sep{width:1px;height:20px;background:rgba(255,255,255,.06);margin:0 6px}
+.wb{width:28px;height:28px;display:flex;align-items:center;justify-content:center;background:none;border:1px solid rgba(255,255,255,.08);border-radius:3px;color:rgba(255,255,255,.3);font-size:12px;cursor:pointer;transition:all .15s}
+.wb:hover{color:#fff;border-color:rgba(255,255,255,.2)}
+.wb.xb:hover{color:#c41818;border-color:rgba(196,24,24,.25)}
+.main{position:relative;z-index:10;padding:20px 24px 0;display:flex;flex-direction:column;height:calc(700px - 68px - 130px);overflow:hidden}
+.sec-title{font-family:'Oswald',sans-serif;font-size:16px;font-weight:400;letter-spacing:5px;text-transform:uppercase;color:rgba(255,255,255,.55);margin-bottom:14px;flex-shrink:0;padding-left:4px}
+.updates-scroll{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding-right:6px;padding-bottom:10px}
+.updates-scroll::-webkit-scrollbar{width:3px}
+.updates-scroll::-webkit-scrollbar-track{background:transparent}
+.updates-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.08);border-radius:2px}
+.updates-scroll::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.15)}
+.update{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.04);border-radius:6px;padding:24px 28px;display:flex;flex-direction:column;gap:12px}
+.update-head{display:flex;justify-content:space-between;align-items:center}
+.update-name{font-family:'Oswald',sans-serif;font-size:16px;font-weight:500;text-transform:uppercase;letter-spacing:1.5px}
+.update-badge{font-size:10px;font-weight:500;letter-spacing:1.5px;text-transform:uppercase;color:var(--accent);padding:4px 10px;border:1px solid rgba(196,24,24,.15);border-radius:3px;background:rgba(196,24,24,.06)}
+.update-text{font-size:12.5px;line-height:1.8;color:rgba(255,255,255,.28);font-weight:300}
+.update-footer{display:flex;align-items:center;gap:16px}
+.btn-read{display:inline-flex;align-items:center;gap:6px;background:none;border:1px solid rgba(255,255,255,.1);color:rgba(255,255,255,.45);padding:8px 24px;font-family:'Oswald',sans-serif;font-size:11px;font-weight:400;letter-spacing:2px;text-transform:uppercase;cursor:pointer;transition:all .2s;border-radius:3px}
+.btn-read:hover{border-color:rgba(255,255,255,.25);color:#fff;background:rgba(255,255,255,.03)}
+.credit{font-size:10px;color:rgba(255,255,255,.12)}
+.bottom{position:absolute;bottom:0;left:0;right:0;z-index:10;display:flex;align-items:center;padding:16px 24px;background:rgba(0,0,0,.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-top:1px solid rgba(255,255,255,.04)}
+.dl-area{flex:1;padding-right:20px;display:flex;flex-direction:column;justify-content:center}
+.dl-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.dl-label{font-size:13px;color:rgba(255,255,255,.35);font-weight:300}
+.dl-stats{font-size:13px;color:rgba(255,255,255,.35);font-weight:300}
+.bar{width:100%;height:8px;border-radius:4px;background:rgba(255,255,255,.05);overflow:hidden}
+.bar-fill{width:0%;height:100%;border-radius:4px;background:linear-gradient(90deg,#c41818,#6e0a0a);transition:width .3s cubic-bezier(.16,1,.3,1)}
+.r-panel{width:230px;flex-shrink:0;display:flex;flex-direction:column;gap:5px}
+.online{display:flex;justify-content:space-between;align-items:center;background:rgba(14,14,14,.9);border:1px solid rgba(255,255,255,.04);padding:8px 14px;border-radius:2px}
+.online-l{font-size:12px;color:rgba(255,255,255,.35)}
+.online-r{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600}
+.online-r .d{width:5px;height:5px;border-radius:50%;background:#34d399;box-shadow:0 0 4px rgba(52,211,153,.4)}
+.online-r .d.off{background:#c41818;box-shadow:0 0 4px rgba(196,24,24,.4)}
+.play{background:rgba(14,14,14,.9);border:1px solid rgba(255,255,255,.04);color:#fff;padding:10px;font-family:'Oswald',sans-serif;font-size:13px;font-weight:400;letter-spacing:4px;text-transform:uppercase;cursor:pointer;text-align:center;border-radius:2px;transition:all .2s}
+.play:hover{background:rgba(24,24,24,.95);border-color:rgba(255,255,255,.08)}
+.play:active{transform:scale(.98)}
+.play:disabled{color:rgba(255,255,255,.15);cursor:not-allowed;transform:none}
+.err{font-size:10px;color:#c41818;text-align:center;opacity:0;transition:opacity .3s;height:12px;margin-top:3px}
+.err.on{opacity:1}
+</style>
+</head>
+<body>
+
+<div class="bg"></div>
+
+<div class="topbar">
+  <div style="display:flex;align-items:center;gap:14px">
+    <div class="logo"><img src="logo.png" alt=""></div>
+    <div class="desc">2026 New York City roleplay server built on Multi Theft Auto.</div>
+  </div>
+  <div class="topbar-r">
+    <button class="ic" onclick="openUrl('https://discord.newyorkchronicles.online')"><i class="fab fa-discord"></i></button>
+    <button class="ic" onclick="openUrl('https://github.com/NewYorkChronicles')"><i class="fab fa-github"></i></button>
+    <button class="ic" onclick="openUrl('https://newyorkchronicles.online')"><i class="fa-solid fa-globe"></i></button>
+    <div class="sep"></div>
+    <button class="wb" onclick="post({action:'minimizeApp'})">&#8722;</button>
+    <button class="wb xb" onclick="post({action:'closeApp'})">&#10005;</button>
+  </div>
+</div>
+
+<div class="main">
+  <div class="sec-title">Latest Update</div>
+  <div class="updates-scroll" id="updatesList"></div>
+</div>
+
+<div class="bottom">
+  <div class="dl-area">
+    <div class="dl-row">
+      <span class="dl-label" id="statusLabel">Ready to play</span>
+      <span class="dl-stats" id="dlLabel"></span>
+    </div>
+    <div class="bar"><div class="bar-fill" id="progressFill"></div></div>
+  </div>
+  <div class="r-panel">
+    <div class="online">
+      <span class="online-l">Online players</span>
+      <span class="online-r"><span class="d" id="sDot"></span><span id="sCount">0</span></span>
+    </div>
+    <button class="play" id="playBtn" onclick="post({action:'play'})">Start to Play</button>
+    <div class="err" id="errorLabel"></div>
+  </div>
+</div>
+
+<script>
+function post(o){try{CefSharp.PostMessage(o)}catch(e){console.log(JSON.stringify(o))}}
+function openUrl(u){post({action:'openUrl',url:u})}
+function onServerStatus(d){var dot=document.getElementById('sDot'),cnt=document.getElementById('sCount');if(d&&d.online){dot.className='d';cnt.textContent=d.players+' / '+d.maxPlayers}else{dot.className='d off';cnt.textContent='Offline'}}
+function onGameCheckStart(){document.getElementById('statusLabel').textContent='Verifying game files...';document.getElementById('playBtn').disabled=true}
+function onGameDownloadStart(){document.getElementById('statusLabel').textContent='Loading game resources...'}
+function fmtSz(b){if(b>=1073741824)return(b/1073741824).toFixed(1)+' GB';if(b>=1048576)return(b/1048576).toFixed(1)+' MB';if(b>=1024)return(b/1024).toFixed(0)+' KB';return b+' B'}
+function onGameDownloadProgress(c,t,dl,sz,spd,eta){var p=sz>0?Math.floor(dl/sz*100):0;document.getElementById('progressFill').style.width=p+'%';document.getElementById('dlLabel').textContent=fmtSz(dl)+' / '+fmtSz(sz)+' ( '+spd+' )';document.getElementById('statusLabel').textContent='Loading game resources...'}
+function onGameDownloadComplete(){document.getElementById('progressFill').style.width='100%';document.getElementById('dlLabel').textContent='';document.getElementById('statusLabel').textContent='Ready to play';document.getElementById('playBtn').disabled=false}
+function onPlayResult(ok,msg){if(!ok){var e=document.getElementById('errorLabel');e.textContent=msg;e.classList.add('on');setTimeout(function(){e.classList.remove('on')},4000);document.getElementById('playBtn').disabled=false;document.getElementById('statusLabel').textContent='Ready to play'}}
+function onSettingsLoaded(s){}
+function onGamePath(p){}
+function setReady(){document.getElementById('playBtn').disabled=false;document.getElementById('statusLabel').textContent='Ready to play';document.getElementById('progressFill').style.width='0%';document.getElementById('dlLabel').textContent=''}
+function setVersion(v){document.querySelector('.credit').textContent='NYC \u2022 '+v}
+function onUpdateAvailable(v,log){document.getElementById('statusLabel').textContent='Updating to '+v+'...';document.getElementById('playBtn').disabled=true}
+function onUpdateProgress(pct,s){document.getElementById('progressFill').style.width=pct+'%';document.getElementById('statusLabel').textContent=s}
+function onUpdateStatus(s){document.getElementById('statusLabel').textContent=s}
+function onUpdates(d){
+  var el=document.getElementById('updatesList');if(!el||!d||!d.updates)return;
+  el.innerHTML='';
+  d.updates.forEach(function(u){
+    var dt=new Date(u.created_at);var dateStr=dt.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    el.innerHTML+='<div class="update"><div class="update-head"><div class="update-name">'+u.title+'</div><div class="update-badge">'+u.badge+'</div></div><div class="update-text">'+u.body+'</div><div class="update-footer"><span class="credit">'+dateStr+'</span></div></div>';
+  });
+}
+post({action:'getServerStatus'});
+post({action:'getUpdates'});
+setInterval(function(){post({action:'getServerStatus'})},30000);
+</script>
+</body>
+</html>
