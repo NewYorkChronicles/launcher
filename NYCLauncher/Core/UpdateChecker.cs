@@ -29,7 +29,7 @@ namespace NYCLauncher.Core
     {
         private static readonly HttpClient _http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
         private static readonly string VERSION_URL = Secrets.VERSION_URL;
-        public const string CurrentVersion = "v1.2.0";
+        public const string CurrentVersion = "v1.3.0";
 
         public static void CleanOldFiles()
         {
@@ -118,8 +118,10 @@ namespace NYCLauncher.Core
 
             onProgress?.Invoke(100, "Restarting...");
             try { App.AppMutex?.ReleaseMutex(); App.AppMutex?.Dispose(); App.AppMutex = null; } catch { }
-            await Task.Delay(200);
-            Process.Start(new ProcessStartInfo { FileName = exePath, UseShellExecute = true });
+            await Task.Delay(500);
+            var psi = new ProcessStartInfo { FileName = exePath, UseShellExecute = true, Verb = "runas" };
+            try { Process.Start(psi); } catch { Process.Start(new ProcessStartInfo { FileName = exePath, UseShellExecute = true }); }
+            await Task.Delay(1000);
             Environment.Exit(0);
         }
     }
