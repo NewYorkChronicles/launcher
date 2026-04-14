@@ -10,7 +10,7 @@ Downloads and verifies game files, auto-updates, and launches the game.
 - Game file verification and download
 - Server status display
 - CefSharp embedded UI
-- No admin privileges required
+- Requires administrator privileges
 - Minimal resource usage when minimized
 
 ## Build
@@ -34,4 +34,4 @@ Downloads and verifies game files, auto-updates, and launches the game.
 
 ## License
 
-Proprietary. All rights reserved.
+[GPL v3](LICENSE)
