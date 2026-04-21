@@ -32,6 +32,11 @@ Downloads and verifies game files, auto-updates, and launches the game.
 - [Discord](https://discord.newyorkchronicles.online)
 - [Client Source](https://github.com/NewYorkChronicles/client)
 
+## Developers
+
+- Ben Horma Idriss (izcarti)
+- Merzoug Mohamed Rayane (MrSmiiith)
+
 ## License
 
 [GPL v3](LICENSE)
