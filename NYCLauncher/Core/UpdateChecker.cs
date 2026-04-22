@@ -29,7 +29,7 @@ namespace NYCLauncher.Core
     {
         private static readonly HttpClient _http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
         private static readonly string VERSION_URL = Secrets.VERSION_URL;
-        public const string CurrentVersion = "v1.3.0";
+        public const string CurrentVersion = "v1.4.0";
 
         public static void CleanOldFiles()
         {
