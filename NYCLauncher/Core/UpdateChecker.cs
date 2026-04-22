@@ -29,7 +29,7 @@ namespace NYCLauncher.Core
     {
         private static readonly HttpClient _http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
         private static readonly string VERSION_URL = Secrets.VERSION_URL;
-        public const string CurrentVersion = "v1.4.1";
+        public const string CurrentVersion = "v1.4.2";
 
         public static void CleanOldFiles()
         {
@@ -77,7 +77,7 @@ namespace NYCLauncher.Core
             var info = await CheckAsync();
             if (!info.Available || info.Files == null || info.Files.Count == 0) return;
 
-            string exePath = Assembly.GetExecutingAssembly().Location;
+            string exePath = Process.GetCurrentProcess().MainModule.FileName;
             string exeDir = System.IO.Path.GetDirectoryName(exePath);
 
             for (int i = 0; i < info.Files.Count; i++)
@@ -119,8 +119,12 @@ namespace NYCLauncher.Core
             onProgress?.Invoke(100, "Restarting...");
             try { App.AppMutex?.ReleaseMutex(); App.AppMutex?.Dispose(); App.AppMutex = null; } catch { }
             await Task.Delay(500);
-            var psi = new ProcessStartInfo { FileName = exePath, UseShellExecute = true, Verb = "runas" };
-            try { Process.Start(psi); } catch { Process.Start(new ProcessStartInfo { FileName = exePath, UseShellExecute = true }); }
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = exePath,
+                WorkingDirectory = exeDir,
+                UseShellExecute = false
+            });
             await Task.Delay(1000);
             Environment.Exit(0);
         }
