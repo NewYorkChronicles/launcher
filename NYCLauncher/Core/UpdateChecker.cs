@@ -101,10 +101,10 @@ namespace NYCLauncher.Core
                 };
                 await dl.DownloadFileTaskAsync(file.Url, tempPath);
 
-                if (dl.Status == DownloadStatus.Failed || !File.Exists(tempPath) || new FileInfo(tempPath).Length == 0)
+                if (dl.Status != DownloadStatus.Completed || !File.Exists(tempPath) || new FileInfo(tempPath).Length == 0)
                 {
                     try { File.Delete(tempPath); } catch { }
-                    throw new Exception("Download failed: " + file.Path);
+                    throw new Exception("Download " + dl.Status + ": " + file.Path);
                 }
 
                 string oldPath = destPath + ".old";

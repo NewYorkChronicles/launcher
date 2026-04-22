@@ -1,9 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Net;
 using System.Net.Http;
-using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using Downloader;
@@ -51,8 +49,6 @@ namespace NYCLauncher.Core
                     if (modFiles.Contains(kv.Key)) continue;
                     if (!local.TryGetValue(kv.Key, out var lf) || lf.Size != kv.Value.Size)
                         needed.Add(kv.Key);
-                    else if (!string.IsNullOrEmpty(kv.Value.Hash) && HashFile(lf.FullPath) != kv.Value.Hash)
-                        needed.Add(kv.Key);
                 }
                 var allowed = new HashSet<string>(manifest.Keys, StringComparer.OrdinalIgnoreCase);
                 await Task.Run(() => Clean(dir, local, allowed, modFiles));
@@ -62,11 +58,7 @@ namespace NYCLauncher.Core
                 foreach (var kv in manifest)
                 {
                     string lp = Path.Combine(dir, kv.Key.Replace('/', Path.DirectorySeparatorChar));
-                    if (!File.Exists(lp))
-                        needed.Add(kv.Key);
-                    else if (new FileInfo(lp).Length != kv.Value.Size)
-                        needed.Add(kv.Key);
-                    else if (!string.IsNullOrEmpty(kv.Value.Hash) && HashFile(lp) != kv.Value.Hash)
+                    if (!File.Exists(lp) || new FileInfo(lp).Length != kv.Value.Size)
                         needed.Add(kv.Key);
                 }
             }
@@ -93,7 +85,7 @@ namespace NYCLauncher.Core
         }
 
         private static readonly string[] SkipDirs = { "mods/deathmatch/cache", "mods/deathmatch/resource-cache", "mods/deathmatch/logs", "mods/deathmatch/dumps", "mods/deathmatch/priv" };
-        private static readonly HashSet<string> SkipExt = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".log", ".set", ".flag" };
+        private static readonly HashSet<string> SkipExt = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".log", ".set", ".flag", ".part", ".pkg" };
         private static readonly HashSet<string> SkipNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "settings.xml", "chatboxpresets.xml", "core.log.flag" };
 
         private Dictionary<string, LFile> Scan(string dir)
@@ -145,10 +137,42 @@ namespace NYCLauncher.Core
                 _cts.Token.ThrowIfCancellationRequested();
                 string fp = files[i];
                 string lp = Path.Combine(dir, fp.Replace('/', Path.DirectorySeparatorChar));
+                string partPath = lp + ".part";
+                string pkgPath = lp + ".part.pkg";
+                string url = cdn + "/" + fp;
+                long wantSize = manifest.ContainsKey(fp) ? manifest[fp].Size : -1;
                 Directory.CreateDirectory(Path.GetDirectoryName(lp));
-                try { if (File.Exists(lp)) File.Delete(lp); } catch { }
-                _dl = new DownloadService(new DownloadConfiguration { ChunkCount = 4, ParallelDownload = true, MaxTryAgainOnFailover = 3, Timeout = 15000, BufferBlockSize = 65536, RequestConfiguration = { KeepAlive = true, UserAgent = "NYCLauncher/1.0" } });
+
+                DownloadPackage pkg = null;
+                if (File.Exists(pkgPath))
+                {
+                    try
+                    {
+                        pkg = JsonConvert.DeserializeObject<DownloadPackage>(File.ReadAllText(pkgPath));
+                        if (pkg == null || (wantSize >= 0 && pkg.TotalFileSize != wantSize))
+                            pkg = null;
+                    }
+                    catch { pkg = null; }
+                }
+                if (pkg == null)
+                {
+                    try { if (File.Exists(partPath)) File.Delete(partPath); } catch { }
+                    try { if (File.Exists(pkgPath)) File.Delete(pkgPath); } catch { }
+                }
+
+                _dl = new DownloadService(new DownloadConfiguration
+                {
+                    ChunkCount = 4,
+                    ParallelDownload = true,
+                    MaxTryAgainOnFailover = 3,
+                    Timeout = 15000,
+                    BufferBlockSize = 65536,
+                    ReserveStorageSpaceBeforeStartingDownload = false,
+                    ClearPackageOnCompletionWithFailure = false,
+                    RequestConfiguration = { KeepAlive = true, UserAgent = "NYCLauncher/1.0" }
+                });
                 long prevDone = doneBytes;
+                int fileIndex = i;
                 _dl.DownloadProgressChanged += (s, e) =>
                 {
                     double el = globalSw.Elapsed.TotalSeconds;
@@ -157,42 +181,59 @@ namespace NYCLauncher.Core
                     double spd = (currentTotal - globalLb) / (el - globalLt);
                     globalLb = currentTotal; globalLt = el;
                     string eta = totalSize > 0 && spd > 0 ? Fmt((totalSize - currentTotal) / spd) : "";
-                    onProgress?.Invoke(i + 1, total, currentTotal, totalSize, Spd(spd), eta);
+                    onProgress?.Invoke(fileIndex + 1, total, currentTotal, totalSize, Spd(spd), eta);
                 };
-                await _dl.DownloadFileTaskAsync(cdn + "/" + fp, lp, _cts.Token);
-                if (_dl.Status != DownloadStatus.Completed) throw new Exception("Download " + _dl.Status + ": " + fp);
-                if (manifest.ContainsKey(fp))
-                {
-                    long got = File.Exists(lp) ? new FileInfo(lp).Length : -1;
-                    long want = manifest[fp].Size;
-                    if (got != want)
-                    {
-                        try { File.Delete(lp); } catch { }
-                        throw new Exception("Size mismatch " + got + "/" + want + ": " + fp);
-                    }
-                }
-                doneBytes += manifest.ContainsKey(fp) ? manifest[fp].Size : 0;
-            }
-        }
 
-        private static string HashFile(string path)
-        {
-            try
-            {
-                using (var md5 = MD5.Create())
-                using (var fs = File.OpenRead(path))
+                string pkgTmp = pkgPath + ".tmp";
+                var saveTimer = new Timer(_ =>
                 {
-                    var hash = md5.ComputeHash(fs);
-                    return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                    try
+                    {
+                        var p = _dl?.Package;
+                        if (p == null) return;
+                        File.WriteAllText(pkgTmp, JsonConvert.SerializeObject(p));
+                        if (File.Exists(pkgPath)) File.Delete(pkgPath);
+                        File.Move(pkgTmp, pkgPath);
+                    }
+                    catch { }
+                }, null, 2000, 2000);
+
+                try
+                {
+                    if (pkg != null)
+                        await _dl.DownloadFileTaskAsync(pkg, _cts.Token);
+                    else
+                        await _dl.DownloadFileTaskAsync(url, partPath, _cts.Token);
                 }
+                finally
+                {
+                    saveTimer.Dispose();
+                    try { if (File.Exists(pkgTmp)) File.Delete(pkgTmp); } catch { }
+                }
+
+                if (_dl.Status != DownloadStatus.Completed)
+                    throw new Exception("Download " + _dl.Status + ": " + fp);
+
+                long got = File.Exists(partPath) ? new FileInfo(partPath).Length : -1;
+                if (wantSize >= 0 && got != wantSize)
+                {
+                    try { File.Delete(partPath); } catch { }
+                    try { File.Delete(pkgPath); } catch { }
+                    throw new Exception("Size mismatch " + got + "/" + wantSize + ": " + fp);
+                }
+
+                try { if (File.Exists(lp)) File.Delete(lp); } catch { }
+                File.Move(partPath, lp);
+                try { if (File.Exists(pkgPath)) File.Delete(pkgPath); } catch { }
+
+                doneBytes += wantSize >= 0 ? wantSize : 0;
             }
-            catch { return ""; }
         }
 
         private static string Spd(double b) => b >= 1_048_576 ? $"{b / 1_048_576:F1} MB/s" : b >= 1024 ? $"{b / 1024:F1} KB/s" : $"{b:F0} B/s";
         private static string Fmt(double s) => s < 60 ? $"~{(int)s}s" : s < 3600 ? $"~{(int)(s / 60)}m" : $"~{(int)(s / 3600)}h";
 
-        private struct MEntry { [JsonProperty("size")] public long Size; [JsonProperty("hash")] public string Hash; }
+        private struct MEntry { [JsonProperty("size")] public long Size; }
         private struct LFile { public long Size; public string FullPath; }
     }
 }
