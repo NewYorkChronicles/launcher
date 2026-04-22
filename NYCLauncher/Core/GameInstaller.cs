@@ -51,6 +51,8 @@ namespace NYCLauncher.Core
                     if (modFiles.Contains(kv.Key)) continue;
                     if (!local.TryGetValue(kv.Key, out var lf) || lf.Size != kv.Value.Size)
                         needed.Add(kv.Key);
+                    else if (!string.IsNullOrEmpty(kv.Value.Hash) && HashFile(lf.FullPath) != kv.Value.Hash)
+                        needed.Add(kv.Key);
                 }
                 var allowed = new HashSet<string>(manifest.Keys, StringComparer.OrdinalIgnoreCase);
                 await Task.Run(() => Clean(dir, local, allowed, modFiles));
@@ -144,6 +146,7 @@ namespace NYCLauncher.Core
                 string fp = files[i];
                 string lp = Path.Combine(dir, fp.Replace('/', Path.DirectorySeparatorChar));
                 Directory.CreateDirectory(Path.GetDirectoryName(lp));
+                try { if (File.Exists(lp)) File.Delete(lp); } catch { }
                 _dl = new DownloadService(new DownloadConfiguration { ChunkCount = 4, ParallelDownload = true, MaxTryAgainOnFailover = 3, Timeout = 15000, BufferBlockSize = 65536, RequestConfiguration = { KeepAlive = true, UserAgent = "NYCLauncher/1.0" } });
                 long prevDone = doneBytes;
                 _dl.DownloadProgressChanged += (s, e) =>
@@ -157,7 +160,17 @@ namespace NYCLauncher.Core
                     onProgress?.Invoke(i + 1, total, currentTotal, totalSize, Spd(spd), eta);
                 };
                 await _dl.DownloadFileTaskAsync(cdn + "/" + fp, lp, _cts.Token);
-                if (_dl.Status == DownloadStatus.Failed) throw new Exception("Download failed: " + fp);
+                if (_dl.Status != DownloadStatus.Completed) throw new Exception("Download " + _dl.Status + ": " + fp);
+                if (manifest.ContainsKey(fp))
+                {
+                    long got = File.Exists(lp) ? new FileInfo(lp).Length : -1;
+                    long want = manifest[fp].Size;
+                    if (got != want)
+                    {
+                        try { File.Delete(lp); } catch { }
+                        throw new Exception("Size mismatch " + got + "/" + want + ": " + fp);
+                    }
+                }
                 doneBytes += manifest.ContainsKey(fp) ? manifest[fp].Size : 0;
             }
         }
