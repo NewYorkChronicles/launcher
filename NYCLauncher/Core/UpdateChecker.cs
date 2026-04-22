@@ -118,14 +118,16 @@ namespace NYCLauncher.Core
 
             onProgress?.Invoke(100, "Restarting...");
             try { App.AppMutex?.ReleaseMutex(); App.AppMutex?.Dispose(); App.AppMutex = null; } catch { }
-            await Task.Delay(500);
+            try { CefSharp.Cef.Shutdown(); } catch { }
+            await Task.Delay(1500);
             Process.Start(new ProcessStartInfo
             {
                 FileName = exePath,
                 WorkingDirectory = exeDir,
-                UseShellExecute = false
+                UseShellExecute = false,
+                CreateNoWindow = false
             });
-            await Task.Delay(1000);
+            await Task.Delay(400);
             Environment.Exit(0);
         }
     }
