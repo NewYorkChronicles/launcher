@@ -50,9 +50,16 @@ namespace NYCLauncher.Core
                 string lp = Path.Combine(dir, kv.Key.Replace('/', Path.DirectorySeparatorChar));
                 if (!File.Exists(lp)) { needed.Add(kv.Key); continue; }
 
-                installed.TryGetValue(kv.Key, out var rec);
                 long diskSize = new FileInfo(lp).Length;
-                if (rec == null || rec.Size != kv.Value.Size || rec.Etag != kv.Value.Etag || diskSize != kv.Value.Size)
+                if (diskSize != kv.Value.Size) { needed.Add(kv.Key); continue; }
+
+                installed.TryGetValue(kv.Key, out var rec);
+                if (rec == null)
+                {
+                    installed[kv.Key] = new InstalledRec { Size = kv.Value.Size, Etag = kv.Value.Etag };
+                    continue;
+                }
+                if (rec.Size != kv.Value.Size || rec.Etag != kv.Value.Etag)
                     needed.Add(kv.Key);
             }
 
