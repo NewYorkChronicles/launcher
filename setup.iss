@@ -1,3 +1,9 @@
+; Requires a sign tool named "nyc" to be registered once in Inno Setup IDE:
+;   Tools -> Configure Sign Tools... -> Add
+;     Name:    nyc
+;     Command: signtool sign /n "Mohamed Rayane Merzoug" /fd SHA256 /tr http://time.certum.pl /td SHA256 /v $f
+; (or pass /Snyc="signtool sign /n ... $f" to ISCC.exe from CLI)
+
 [Setup]
 AppName=New York Chronicles
 AppVersion=1.3.0
@@ -13,6 +19,9 @@ SolidCompression=yes
 ArchitecturesAllowed=x86compatible
 WizardStyle=modern
 PrivilegesRequired=admin
+
+SignTool=nyc
+SignedUninstaller=yes
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"
