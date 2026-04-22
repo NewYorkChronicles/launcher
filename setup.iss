@@ -6,7 +6,7 @@
 
 [Setup]
 AppName=New York Chronicles
-AppVersion=1.4.0
+AppVersion=1.4.1
 AppPublisher=New York Chronicles
 DefaultDirName={autopf32}\New York Chronicles
 DefaultGroupName=New York Chronicles
