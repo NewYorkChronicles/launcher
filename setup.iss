@@ -26,6 +26,11 @@ SignedUninstaller=yes
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"
 
+[Dirs]
+Name: "{app}"; Permissions: users-modify
+Name: "{app}\game"; Permissions: users-modify
+Name: "{commonappdata}\New York Chronicles"; Permissions: users-modify
+
 [Files]
 ; Main executables and config
 Source: "NYCLauncher\bin\Release\net48\Launcher.exe"; DestDir: "{app}"; Flags: ignoreversion
@@ -80,4 +85,7 @@ Root: HKCR; Subkey: "nycl\DefaultIcon"; ValueType: string; ValueData: """{app}\L
 Root: HKCR; Subkey: "nycl\shell\open\command"; ValueType: string; ValueData: """{app}\Launcher.exe"" ""%1"""
 
 [UninstallDelete]
+Type: filesandordirs; Name: "{app}\game"
+Type: filesandordirs; Name: "{app}"
+Type: filesandordirs; Name: "{userappdata}\NYCLauncher"
 Type: filesandordirs; Name: "{commonappdata}\New York Chronicles"
