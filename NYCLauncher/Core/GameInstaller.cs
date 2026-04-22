@@ -38,34 +38,36 @@ namespace NYCLauncher.Core
             if (manifest.Count == 0) return;
             _cts.Token.ThrowIfCancellationRequested();
 
+            var installed = LoadInstalled(path);
             var needed = new List<string>();
+            var modFiles = whitelist ? ModFiles() : null;
+
+            foreach (var kv in manifest)
+            {
+                if (SkipExt.Contains(Path.GetExtension(kv.Key)) || SkipNames.Contains(Path.GetFileName(kv.Key))) continue;
+                if (whitelist && modFiles.Contains(kv.Key)) continue;
+
+                string lp = Path.Combine(dir, kv.Key.Replace('/', Path.DirectorySeparatorChar));
+                if (!File.Exists(lp)) { needed.Add(kv.Key); continue; }
+
+                installed.TryGetValue(kv.Key, out var rec);
+                long diskSize = new FileInfo(lp).Length;
+                if (rec == null || rec.Size != kv.Value.Size || rec.Etag != kv.Value.Etag || diskSize != kv.Value.Size)
+                    needed.Add(kv.Key);
+            }
+
             if (whitelist)
             {
-                var local = await Task.Run(() => Scan(dir));
-                var modFiles = ModFiles();
-                foreach (var kv in manifest)
-                {
-                    if (SkipExt.Contains(Path.GetExtension(kv.Key)) || SkipNames.Contains(Path.GetFileName(kv.Key))) continue;
-                    if (modFiles.Contains(kv.Key)) continue;
-                    if (!local.TryGetValue(kv.Key, out var lf) || lf.Size != kv.Value.Size)
-                        needed.Add(kv.Key);
-                }
                 var allowed = new HashSet<string>(manifest.Keys, StringComparer.OrdinalIgnoreCase);
-                await Task.Run(() => Clean(dir, local, allowed, modFiles));
+                await Task.Run(() => Clean(dir, allowed, modFiles));
             }
-            else
-            {
-                foreach (var kv in manifest)
-                {
-                    string lp = Path.Combine(dir, kv.Key.Replace('/', Path.DirectorySeparatorChar));
-                    if (!File.Exists(lp) || new FileInfo(lp).Length != kv.Value.Size)
-                        needed.Add(kv.Key);
-                }
-            }
-            if (needed.Count == 0) return;
+
+            if (needed.Count == 0) { SaveInstalled(path, installed); return; }
+
             long totalSize = 0;
-            foreach (var f in needed) { if (manifest.ContainsKey(f)) totalSize += manifest[f].Size; }
-            await Download(needed, manifest, $"{CDN_BASE}/{path}", dir, totalSize, onProgress);
+            foreach (var f in needed) totalSize += manifest[f].Size;
+            await Download(needed, manifest, $"{CDN_BASE}/{path}", dir, totalSize, onProgress, installed);
+            SaveInstalled(path, installed);
         }
 
         private async Task<Dictionary<string, MEntry>> Fetch(HttpClient http, string path)
@@ -85,30 +87,21 @@ namespace NYCLauncher.Core
         }
 
         private static readonly string[] SkipDirs = { "mods/deathmatch/cache", "mods/deathmatch/resource-cache", "mods/deathmatch/logs", "mods/deathmatch/dumps", "mods/deathmatch/priv" };
-        private static readonly HashSet<string> SkipExt = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".log", ".set", ".flag", ".part", ".pkg" };
+        private static readonly HashSet<string> SkipExt = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".log", ".set", ".flag", ".tmp" };
         private static readonly HashSet<string> SkipNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "settings.xml", "chatboxpresets.xml", "core.log.flag" };
 
-        private Dictionary<string, LFile> Scan(string dir)
+        private void Clean(string dir, HashSet<string> allowed, HashSet<string> modFiles)
         {
-            var r = new Dictionary<string, LFile>(StringComparer.OrdinalIgnoreCase);
-            if (!Directory.Exists(dir)) return r;
+            if (!Directory.Exists(dir)) return;
             foreach (var f in Directory.GetFiles(dir, "*", SearchOption.AllDirectories))
             {
                 string rel = f.Substring(dir.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Replace('\\', '/');
                 bool skip = false;
                 foreach (var sd in SkipDirs) if (rel.StartsWith(sd, StringComparison.OrdinalIgnoreCase)) { skip = true; break; }
-                if (!skip) r[rel] = new LFile { Size = new FileInfo(f).Length, FullPath = f };
-            }
-            return r;
-        }
-
-        private void Clean(string dir, Dictionary<string, LFile> local, HashSet<string> allowed, HashSet<string> modFiles)
-        {
-            foreach (var kv in local)
-            {
-                if (allowed.Contains(kv.Key) || SkipExt.Contains(Path.GetExtension(kv.Key)) || SkipNames.Contains(Path.GetFileName(kv.Key))) continue;
-                if (kv.Key.StartsWith("MTA/config/", StringComparison.OrdinalIgnoreCase) || modFiles.Contains(kv.Key)) continue;
-                try { File.Delete(Path.Combine(dir, kv.Key.Replace('/', Path.DirectorySeparatorChar))); } catch { }
+                if (skip) continue;
+                if (allowed.Contains(rel) || SkipExt.Contains(Path.GetExtension(rel)) || SkipNames.Contains(Path.GetFileName(rel))) continue;
+                if (rel.StartsWith("MTA/config/", StringComparison.OrdinalIgnoreCase) || modFiles.Contains(rel)) continue;
+                try { File.Delete(f); } catch { }
             }
         }
 
@@ -126,7 +119,7 @@ namespace NYCLauncher.Core
             return r;
         }
 
-        private async Task Download(List<string> files, Dictionary<string, MEntry> manifest, string cdn, string dir, long totalSize, Action<int, int, long, long, string, string> onProgress)
+        private async Task Download(List<string> files, Dictionary<string, MEntry> manifest, string cdn, string dir, long totalSize, Action<int, int, long, long, string, string> onProgress, Dictionary<string, InstalledRec> installed)
         {
             int total = files.Count;
             long doneBytes = 0;
@@ -137,28 +130,12 @@ namespace NYCLauncher.Core
                 _cts.Token.ThrowIfCancellationRequested();
                 string fp = files[i];
                 string lp = Path.Combine(dir, fp.Replace('/', Path.DirectorySeparatorChar));
-                string partPath = lp + ".part";
-                string pkgPath = lp + ".part.pkg";
+                string tmpPath = lp + ".tmp";
                 string url = cdn + "/" + fp;
-                long wantSize = manifest.ContainsKey(fp) ? manifest[fp].Size : -1;
+                long wantSize = manifest[fp].Size;
                 Directory.CreateDirectory(Path.GetDirectoryName(lp));
 
-                DownloadPackage pkg = null;
-                if (File.Exists(pkgPath))
-                {
-                    try
-                    {
-                        pkg = JsonConvert.DeserializeObject<DownloadPackage>(File.ReadAllText(pkgPath));
-                        if (pkg == null || (wantSize >= 0 && pkg.TotalFileSize != wantSize))
-                            pkg = null;
-                    }
-                    catch { pkg = null; }
-                }
-                if (pkg == null)
-                {
-                    try { if (File.Exists(partPath)) File.Delete(partPath); } catch { }
-                    try { if (File.Exists(pkgPath)) File.Delete(pkgPath); } catch { }
-                }
+                try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch { }
 
                 _dl = new DownloadService(new DownloadConfiguration
                 {
@@ -168,7 +145,6 @@ namespace NYCLauncher.Core
                     Timeout = 15000,
                     BufferBlockSize = 65536,
                     ReserveStorageSpaceBeforeStartingDownload = false,
-                    ClearPackageOnCompletionWithFailure = false,
                     RequestConfiguration = { KeepAlive = true, UserAgent = "NYCLauncher/1.0" }
                 });
                 long prevDone = doneBytes;
@@ -184,56 +160,62 @@ namespace NYCLauncher.Core
                     onProgress?.Invoke(fileIndex + 1, total, currentTotal, totalSize, Spd(spd), eta);
                 };
 
-                string pkgTmp = pkgPath + ".tmp";
-                var saveTimer = new Timer(_ =>
-                {
-                    try
-                    {
-                        var p = _dl?.Package;
-                        if (p == null) return;
-                        File.WriteAllText(pkgTmp, JsonConvert.SerializeObject(p));
-                        if (File.Exists(pkgPath)) File.Delete(pkgPath);
-                        File.Move(pkgTmp, pkgPath);
-                    }
-                    catch { }
-                }, null, 2000, 2000);
-
-                try
-                {
-                    if (pkg != null)
-                        await _dl.DownloadFileTaskAsync(pkg, _cts.Token);
-                    else
-                        await _dl.DownloadFileTaskAsync(url, partPath, _cts.Token);
-                }
-                finally
-                {
-                    saveTimer.Dispose();
-                    try { if (File.Exists(pkgTmp)) File.Delete(pkgTmp); } catch { }
-                }
+                await _dl.DownloadFileTaskAsync(url, tmpPath, _cts.Token);
 
                 if (_dl.Status != DownloadStatus.Completed)
-                    throw new Exception("Download " + _dl.Status + ": " + fp);
-
-                long got = File.Exists(partPath) ? new FileInfo(partPath).Length : -1;
-                if (wantSize >= 0 && got != wantSize)
                 {
-                    try { File.Delete(partPath); } catch { }
-                    try { File.Delete(pkgPath); } catch { }
+                    try { File.Delete(tmpPath); } catch { }
+                    throw new Exception("Download " + _dl.Status + ": " + fp);
+                }
+
+                long got = File.Exists(tmpPath) ? new FileInfo(tmpPath).Length : -1;
+                if (got != wantSize)
+                {
+                    try { File.Delete(tmpPath); } catch { }
                     throw new Exception("Size mismatch " + got + "/" + wantSize + ": " + fp);
                 }
 
                 try { if (File.Exists(lp)) File.Delete(lp); } catch { }
-                File.Move(partPath, lp);
-                try { if (File.Exists(pkgPath)) File.Delete(pkgPath); } catch { }
+                File.Move(tmpPath, lp);
 
-                doneBytes += wantSize >= 0 ? wantSize : 0;
+                installed[fp] = new InstalledRec { Size = wantSize, Etag = manifest[fp].Etag };
+                doneBytes += wantSize;
             }
+        }
+
+        private static string InstalledPath(string path) =>
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NYCLauncher", "installed." + path + ".json");
+
+        private static Dictionary<string, InstalledRec> LoadInstalled(string path)
+        {
+            try
+            {
+                var p = InstalledPath(path);
+                if (!File.Exists(p)) return new Dictionary<string, InstalledRec>(StringComparer.OrdinalIgnoreCase);
+                var d = JsonConvert.DeserializeObject<Dictionary<string, InstalledRec>>(File.ReadAllText(p));
+                return d != null ? new Dictionary<string, InstalledRec>(d, StringComparer.OrdinalIgnoreCase) : new Dictionary<string, InstalledRec>(StringComparer.OrdinalIgnoreCase);
+            }
+            catch { return new Dictionary<string, InstalledRec>(StringComparer.OrdinalIgnoreCase); }
+        }
+
+        private static void SaveInstalled(string path, Dictionary<string, InstalledRec> installed)
+        {
+            try
+            {
+                var p = InstalledPath(path);
+                Directory.CreateDirectory(Path.GetDirectoryName(p));
+                string tmp = p + ".tmp";
+                File.WriteAllText(tmp, JsonConvert.SerializeObject(installed));
+                if (File.Exists(p)) File.Delete(p);
+                File.Move(tmp, p);
+            }
+            catch { }
         }
 
         private static string Spd(double b) => b >= 1_048_576 ? $"{b / 1_048_576:F1} MB/s" : b >= 1024 ? $"{b / 1024:F1} KB/s" : $"{b:F0} B/s";
         private static string Fmt(double s) => s < 60 ? $"~{(int)s}s" : s < 3600 ? $"~{(int)(s / 60)}m" : $"~{(int)(s / 3600)}h";
 
-        private struct MEntry { [JsonProperty("size")] public long Size; }
-        private struct LFile { public long Size; public string FullPath; }
+        private class MEntry { [JsonProperty("size")] public long Size { get; set; } [JsonProperty("etag")] public string Etag { get; set; } }
+        private class InstalledRec { [JsonProperty("size")] public long Size { get; set; } [JsonProperty("etag")] public string Etag { get; set; } }
     }
 }
