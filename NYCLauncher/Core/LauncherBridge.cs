@@ -1,10 +1,7 @@
 using System;
-using System.Collections.Generic;
 using System.Net.Http;
+using System.Threading;
 using System.Windows;
-using CefSharp;
-using CefSharp.Wpf;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace NYCLauncher.Core
@@ -13,34 +10,124 @@ namespace NYCLauncher.Core
     {
         private static readonly HttpClient _http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
         private readonly MainWindow _window;
-        private readonly ChromiumWebBrowser _browser;
         private readonly SettingsManager _settings;
         private readonly GameLauncher _game;
         private readonly UpdateChecker _updater;
+        private ChunkedInstaller _installer;
+        private System.Threading.Timer _statusPoll;
+        private readonly EventWaitHandle _relaunchEvent;
 
-        public LauncherBridge(MainWindow window, ChromiumWebBrowser browser)
+        public LauncherBridge(MainWindow window)
         {
             _window = window;
-            _browser = browser;
             _settings = new SettingsManager();
             _game = new GameLauncher(_settings);
             _updater = new UpdateChecker();
-            _game.GameExited += () => _window.Dispatcher.InvokeAsync(() =>
+            _game.GameExited += OnGameExited;
+            _relaunchEvent = new EventWaitHandle(false, EventResetMode.AutoReset, "NYCLauncher_Relaunch");
+        }
+
+        private void OnGameExited()
+        {
+            if (_relaunchEvent.WaitOne(0))
+            {
+                _window.Dispatcher.InvokeAsync(() => Relaunch());
+                return;
+            }
+            _window.Dispatcher.InvokeAsync(() =>
             {
                 _window.Show();
                 _window.WindowState = WindowState.Normal;
                 _window.Activate();
-                Js("setReady()");
+                _window.SetReady();
             });
-            bool updateChecked = false;
-            _browser.FrameLoadEnd += (s, e) =>
+        }
+
+        private void Relaunch()
+        {
+            if (_game.IsRunning) return;
+            if (_game.Launch())
             {
-                if (e.Frame.IsMain && !updateChecked)
+                _window.SetStatusText("Restarting…");
+                _window.WindowState = WindowState.Minimized;
+            }
+            else
+            {
+                _window.Show();
+                _window.WindowState = WindowState.Normal;
+                _window.Activate();
+                _window.SetReady();
+            }
+        }
+
+        public void AfterUIReady()
+        {
+            CheckForUpdate();
+            PollServerStatus();
+            _statusPoll = new System.Threading.Timer(_ => PollServerStatus(), null,
+                TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+        }
+
+        public void KillGame() => _game.Kill();
+
+        public async void Play()
+        {
+            if (_game.IsRunning)
+            {
+                _window.SetStatusText("Game is already running.");
+                return;
+            }
+            _window.SetLaunchEnabled(false);
+            _window.SetStatusText("Checking game files…");
+
+            try
+            {
+                bool hadUpdates = false;
+                Action<int, int, long, long, string, string> progress = (cur, total, dl, sz, spd, eta) =>
                 {
-                    updateChecked = true;
-                    _window.Dispatcher.InvokeAsync(() => CheckForUpdate());
+                    hadUpdates = true;
+                    int pct = sz > 0 ? (int)(dl * 100L / sz) : 0;
+                    _window.SetProgress(
+                        pct,
+                        "Downloading · " + FmtSize(dl) + " / " + FmtSize(sz),
+                        spd ?? "—",
+                        eta ?? "—");
+                };
+
+                _installer = new ChunkedInstaller();
+                try
+                {
+                    await _installer.InstallAsync("game", _settings.GameDir, progress);
                 }
-            };
+                finally
+                {
+                    _installer.Dispose();
+                    _installer = null;
+                }
+
+                if (hadUpdates) _window.SetProgress(100, "Update complete", "—", "—");
+
+                if (_game.Launch())
+                {
+                    _window.SetStatusText("Launching…");
+                    _window.Dispatcher.InvokeAsync(() => _window.WindowState = WindowState.Minimized);
+                }
+                else
+                {
+                    _window.SetStatusText("Could not launch game.");
+                    _window.SetLaunchEnabled(true);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                _window.SetStatusText("Download cancelled.");
+                _window.SetLaunchEnabled(true);
+            }
+            catch (Exception ex)
+            {
+                _window.SetStatusText(ex.Message);
+                _window.SetLaunchEnabled(true);
+            }
         }
 
         private async void CheckForUpdate()
@@ -48,168 +135,44 @@ namespace NYCLauncher.Core
             try
             {
                 var info = await _updater.CheckAsync();
-                Js($"setVersion({JsonConvert.SerializeObject(info.CurrentVersion)})");
+                _window.SetVersion(info.CurrentVersion ?? "v—");
                 if (!info.Available) return;
-                Js($"onUpdateAvailable({JsonConvert.SerializeObject(info.LatestVersion)},{JsonConvert.SerializeObject(info.Changelog ?? "")})");
-                await _updater.DownloadAndApplyAsync(
-                    (pct, status) => _window.Dispatcher.InvokeAsync(() =>
-                    {
-                        Js($"onUpdateProgress({pct},{JsonConvert.SerializeObject(status)})");
-                    })
-                );
+                _window.SetStatusText("Updating launcher to " + info.LatestVersion + "…");
+                _window.SetLaunchEnabled(false);
+                await _updater.DownloadAndApplyAsync((pct, status) =>
+                    _window.SetProgress(pct, status, "—", "—"));
             }
             catch (Exception ex)
             {
-                Js($"onUpdateStatus({JsonConvert.SerializeObject("Update failed: " + ex.Message)})");
-                Js("setReady()");
+                _window.SetStatusText("Update failed: " + ex.Message);
+                _window.SetLaunchEnabled(true);
             }
         }
 
-        public void KillGame() => _game.Kill();
-
-        public void HandleMessage(string action, Dictionary<string, object> msg)
-        {
-            switch (action)
-            {
-                case "play": HandlePlay(); break;
-                case "settings": HandleShowSettings(); break;
-                case "getSettings": HandleGetSettings(); break;
-                case "saveSettings": HandleSaveSettings(msg); break;
-                case "getServerStatus": HandleGetServerStatus(); break;
-                case "getUpdates": HandleGetUpdates(); break;
-                case "checkUpdate": HandleCheckUpdate(); break;
-                case "browse": HandleBrowse(); break;
-                case "openUrl": HandleOpenUrl(msg); break;
-                case "closeApp": _window.Dispatcher.Invoke(() => Application.Current.Shutdown()); break;
-                case "minimizeApp": _window.Dispatcher.Invoke(() => _window.WindowState = WindowState.Minimized); break;
-            }
-        }
-
-        private void Js(string script)
-        {
-            if (_browser.IsBrowserInitialized) _browser.ExecuteScriptAsync(script);
-        }
-
-        private void HandleShowSettings()
-        {
-            var s = _settings.Load();
-            string json = JsonConvert.SerializeObject(s, _camelCase);
-            Js($"onSettingsLoaded({json})");
-            Js("showSettings()");
-            Js($"onGamePath({JsonConvert.SerializeObject(_settings.GameDir)})");
-        }
-
-        private void HandleGetSettings()
-        {
-            var s = _settings.Load();
-            Js($"onSettingsLoaded({JsonConvert.SerializeObject(s, _camelCase)})");
-            Js($"onGamePath({JsonConvert.SerializeObject(_settings.GameDir)})");
-        }
-
-        private void HandleSaveSettings(Dictionary<string, object> msg)
-        {
-            try
-            {
-                object v;
-                string json = msg.TryGetValue("settings", out v) && v != null ? v.ToString() : "{}";
-                var incoming = JsonConvert.DeserializeObject<LauncherSettings>(json);
-                var s = _settings.Load();
-                s.VerifyOnLaunch = incoming.VerifyOnLaunch;
-                _settings.Save(s);
-            }
-            catch { }
-        }
-
-        private async void HandlePlay()
-        {
-            if (_game.IsRunning)
-            {
-                Js("onPlayResult(false,'Game is already running.')");
-                return;
-            }
-            Js("onGameCheckStart()");
-            try
-            {
-                var installer = new GameInstaller(_settings.GameDir);
-                bool hadUpdates = false;
-                await installer.InstallAsync((cur, total, dl, sz, spd, eta) =>
-                {
-                    if (!hadUpdates) { hadUpdates = true; _window.Dispatcher.InvokeAsync(() => Js("onGameDownloadStart()")); }
-                    _window.Dispatcher.InvokeAsync(() =>
-                        Js($"onGameDownloadProgress({cur},{total},{dl},{sz},{JsonConvert.SerializeObject(spd)},{JsonConvert.SerializeObject(eta)})"));
-                });
-                _window.Dispatcher.InvokeAsync(() =>
-                {
-                    if (hadUpdates) Js("onGameDownloadComplete()");
-                    if (_game.Launch())
-                    {
-                        Js("onPlayResult(true,'Launching...')");
-                        _window.WindowState = WindowState.Minimized;
-                    }
-                    else Js("onPlayResult(false,'Could not launch game.')");
-                });
-            }
-            catch (Exception ex)
-            {
-                string m = ex is OperationCanceledException ? "Connection timed out." : ex.Message;
-                _window.Dispatcher.InvokeAsync(() => Js($"onPlayResult(false,{JsonConvert.SerializeObject(m)})"));
-            }
-        }
-
-        private async void HandleGetUpdates()
-        {
-            try
-            {
-                var res = await _http.GetAsync(Secrets.API_BASE + "/api/updates?limit=10");
-                var json = await res.Content.ReadAsStringAsync();
-                Js($"onUpdates({json})");
-            }
-            catch { Js("onUpdates({updates:[]})"); }
-        }
-
-        private async void HandleGetServerStatus()
+        private async void PollServerStatus()
         {
             try
             {
                 var res = await _http.GetAsync(Secrets.STATUS_URL);
                 var json = await res.Content.ReadAsStringAsync();
-                Js($"onServerStatus({json})");
+                var d = JObject.Parse(json);
+                bool online = d.Value<bool?>("online") ?? false;
+                int players = d.Value<int?>("players") ?? 0;
+                int max = d.Value<int?>("maxPlayers") ?? 0;
+                _window.SetServerStatus(online, players, max);
             }
-            catch { Js("onServerStatus({online:false,players:0,maxPlayers:0})"); }
-        }
-
-        private async void HandleCheckUpdate()
-        {
-            try
+            catch
             {
-                var r = await _updater.CheckAsync();
-                Js($"onUpdateCheck({JsonConvert.SerializeObject(r, _camelCase)})");
+                _window.SetServerStatus(false, 0, 0);
             }
-            catch { Js("onUpdateCheck({available:false})"); }
         }
 
-        private void HandleBrowse()
+        private static string FmtSize(long b)
         {
-            _window.Dispatcher.Invoke(() =>
-            {
-                var dlg = new System.Windows.Forms.FolderBrowserDialog { Description = "Select MTA:SA game folder" };
-                if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-                    Js($"onGamePath({JsonConvert.SerializeObject(dlg.SelectedPath)})");
-                dlg.Dispose();
-            });
+            if (b >= 1073741824) return (b / 1073741824d).ToString("F1") + " GB";
+            if (b >= 1048576) return (b / 1048576d).ToString("F1") + " MB";
+            if (b >= 1024) return (b / 1024).ToString() + " KB";
+            return b + " B";
         }
-
-        private void HandleOpenUrl(Dictionary<string, object> msg)
-        {
-            object v;
-            string url = msg.TryGetValue("url", out v) && v != null ? v.ToString() : "";
-            if (!string.IsNullOrEmpty(url) && url.StartsWith("https://"))
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = url, UseShellExecute = true });
-        }
-
-        private static readonly JsonSerializerSettings _camelCase = new JsonSerializerSettings
-        {
-            ContractResolver = new Newtonsoft.Json.Serialization.CamelCasePropertyNamesContractResolver()
-        };
     }
 }
