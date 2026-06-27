@@ -10,7 +10,7 @@ Downloads and verifies game files, auto-updates, and launches the game.
 - Game file verification and download
 - Server status display
 - CefSharp embedded UI
-- Requires administrator privileges
+- No admin privileges required
 - Minimal resource usage when minimized
 
 ## Build
@@ -32,11 +32,6 @@ Downloads and verifies game files, auto-updates, and launches the game.
 - [Discord](https://discord.newyorkchronicles.online)
 - [Client Source](https://github.com/NewYorkChronicles/client)
 
-## Developers
-
-- Ben Horma Idriss (izcarti)
-- Merzoug Mohamed Rayane (MrSmiiith)
-
 ## License
 
-[GPL v3](LICENSE)
+Proprietary. All rights reserved.

@@ -1,90 +1,146 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Windows;
-using System.Windows.Media.Animation;
-using CefSharp;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
+using System.Windows.Input;
+using System.Windows.Interop;
+using System.Windows.Media;
 using NYCLauncher.Core;
 
 namespace NYCLauncher
 {
     public partial class MainWindow : Window
     {
-        private LauncherBridge _bridge;
-        private bool _shown;
+        public LauncherBridge Bridge { get; private set; }
+
+        [DllImport("dwmapi.dll", PreserveSig = true)]
+        private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+        private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+        private const int DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1 = 19;
+        private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+        private const int DWMWA_SYSTEMBACKDROP_TYPE = 38;
+        private const int DWMWCP_ROUND = 2;
+        private const int DWMSBT_MAINWINDOW = 2;
 
         public MainWindow()
         {
             InitializeComponent();
-            _bridge = new LauncherBridge(this, Browser);
-            Browser.MenuHandler = new NoContextMenuHandler();
-            Browser.JavascriptMessageReceived += OnMessage;
-            Browser.IsBrowserInitializedChanged += OnBrowserReady;
+            Bridge = new LauncherBridge(this);
+            Loaded += (s, e) => Bridge.AfterUIReady();
         }
 
-        private void DragBar_MouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        protected override void OnSourceInitialized(EventArgs e)
         {
-            if (e.ChangedButton == System.Windows.Input.MouseButton.Left) DragMove();
+            base.OnSourceInitialized(e);
+            var hwnd = new WindowInteropHelper(this).Handle;
+
+            int dark = 1;
+            if (DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref dark, sizeof(int)) != 0)
+                DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1, ref dark, sizeof(int));
+
+            int round = DWMWCP_ROUND;
+            DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref round, sizeof(int));
+
+            int backdrop = DWMSBT_MAINWINDOW;
+            DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref backdrop, sizeof(int));
         }
 
-        protected override void OnClosing(System.ComponentModel.CancelEventArgs e) { _bridge.KillGame(); base.OnClosing(e); }
-
-        protected override void OnStateChanged(EventArgs e)
+        protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
         {
-            base.OnStateChanged(e);
-            if (!Browser.IsBrowserInitialized) return;
-            var host = Browser.GetBrowserHost();
-            if (host == null) return;
-            if (WindowState == WindowState.Minimized)
-                host.WasHidden(true);
-            else
-                host.WasHidden(false);
+            Bridge.KillGame();
+            base.OnClosing(e);
         }
 
-        private void OnBrowserReady(object s, DependencyPropertyChangedEventArgs e)
+        public void SetServerStatus(bool online, int players, int maxPlayers)
         {
-            if (!(bool)e.NewValue) return;
-            Browser.LoadingStateChanged += OnLoadingState;
-            Browser.Load("app://launcher/index.html");
-        }
-
-        private void OnLoadingState(object s, LoadingStateChangedEventArgs e)
-        {
-            if (!e.IsLoading && !_shown)
+            Dispatcher.InvokeAsync(() =>
             {
-                _shown = true;
-                Dispatcher.InvokeAsync(() =>
+                if (online)
                 {
-                    var anim = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(200));
-                    BeginAnimation(OpacityProperty, anim);
-                });
-            }
+                    StatusText.Text = "Online";
+                    StatusText.Foreground = (Brush)FindResource("Green");
+                    StatusDot.Fill = (Brush)FindResource("Green");
+                    PlayersRun.Text = players.ToString();
+                    MaxPlayersRun.Text = maxPlayers.ToString();
+                }
+                else
+                {
+                    StatusText.Text = "Offline";
+                    StatusText.Foreground = (Brush)FindResource("RedHover");
+                    StatusDot.Fill = (Brush)FindResource("RedHover");
+                    PlayersRun.Text = "0";
+                    MaxPlayersRun.Text = "—";
+                }
+            });
         }
 
-        private void OnMessage(object sender, JavascriptMessageReceivedEventArgs e)
+        public void SetProgress(int pct, string status, string speedText, string etaText)
         {
-            try
+            Dispatcher.InvokeAsync(() =>
             {
-                if (e.Message == null) return;
-                Dictionary<string, object> dict;
-                if (e.Message is Dictionary<string, object> d) dict = d;
-                else if (e.Message is IDictionary<string, object> id) dict = id.ToDictionary(kv => kv.Key, kv => kv.Value);
-                else dict = JObject.Parse(JsonConvert.SerializeObject(e.Message)).ToObject<Dictionary<string, object>>();
-                if (dict == null || !dict.ContainsKey("action")) return;
-                string action = dict["action"]?.ToString();
-                if (!string.IsNullOrEmpty(action)) Dispatcher.InvokeAsync(() => _bridge.HandleMessage(action, dict));
-            }
+                if (pct < 0) pct = 0;
+                if (pct > 100) pct = 100;
+                StatusLabel.Text = status ?? "";
+                ProgressPct.Text = pct + "%";
+                SpeedText.Text = speedText ?? "—";
+                EtaText.Text = etaText ?? "—";
+                var track = (System.Windows.Controls.Border)ProgressFillContainer.Parent;
+                ProgressFillContainer.Width = track.ActualWidth * (pct / 100.0);
+            });
+        }
+
+        public void SetStatusText(string status)
+        {
+            Dispatcher.InvokeAsync(() => StatusLabel.Text = status ?? "");
+        }
+
+        public void SetReady()
+        {
+            Dispatcher.InvokeAsync(() =>
+            {
+                StatusLabel.Text = "Ready to play";
+                ProgressPct.Text = "—";
+                SpeedText.Text = "—";
+                EtaText.Text = "—";
+                ProgressFillContainer.Width = 0;
+                LaunchButton.IsEnabled = true;
+            });
+        }
+
+        public void SetLaunchEnabled(bool enabled)
+        {
+            Dispatcher.InvokeAsync(() => LaunchButton.IsEnabled = enabled);
+        }
+
+        public void SetVersion(string v)
+        {
+            Dispatcher.InvokeAsync(() => VersionText.Text = string.IsNullOrEmpty(v) ? "v—" : v);
+        }
+
+        private void LaunchButton_Click(object sender, RoutedEventArgs e)
+        {
+            Bridge.Play();
+        }
+
+        private void Website_Click(object sender, MouseButtonEventArgs e)
+        {
+            OpenUrl("https://newyorkchronicles.online");
+        }
+
+        private void Discord_Click(object sender, MouseButtonEventArgs e)
+        {
+            OpenUrl("https://discord.newyorkchronicles.online");
+        }
+
+        private void Forum_Click(object sender, MouseButtonEventArgs e)
+        {
+            OpenUrl("https://forum.newyorkchronicles.online");
+        }
+
+        private static void OpenUrl(string url)
+        {
+            try { Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true }); }
             catch { }
         }
-    }
-
-    public class NoContextMenuHandler : IContextMenuHandler
-    {
-        public void OnBeforeContextMenu(IWebBrowser b, IBrowser br, IFrame f, IContextMenuParams p, IMenuModel m) { m.Clear(); }
-        public bool OnContextMenuCommand(IWebBrowser b, IBrowser br, IFrame f, IContextMenuParams p, CefMenuCommand c, CefEventFlags e) => false;
-        public void OnContextMenuDismissed(IWebBrowser b, IBrowser br, IFrame f) { }
-        public bool RunContextMenu(IWebBrowser b, IBrowser br, IFrame f, IContextMenuParams p, IMenuModel m, IRunContextMenuCallback c) => false;
     }
 }

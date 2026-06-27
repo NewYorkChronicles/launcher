@@ -4,14 +4,13 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net48</TargetFramework>
     <UseWPF>true</UseWPF>
-    <UseWindowsForms>true</UseWindowsForms>
     <PlatformTarget>x86</PlatformTarget>
     <AssemblyName>Launcher</AssemblyName>
     <RootNamespace>NYCLauncher</RootNamespace>
-    <ApplicationIcon>Web\icon.ico</ApplicationIcon>
+    <ApplicationIcon>Assets\icon.ico</ApplicationIcon>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
-    <AssemblyVersion>1.2.0.0</AssemblyVersion>
-    <FileVersion>1.2.0.0</FileVersion>
+    <AssemblyVersion>1.0.1.0</AssemblyVersion>
+    <FileVersion>1.0.1.0</FileVersion>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Optimize Condition="'$(Configuration)'=='Release'">true</Optimize>
   </PropertyGroup>
@@ -26,8 +25,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="CefSharp.Wpf" Version="144.0.120" />
     <PackageReference Include="Downloader" Version="3.1.2" />
+    <PackageReference Include="K4os.Hash.xxHash" Version="1.0.8" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
@@ -37,11 +36,16 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Web\**" Exclude="Web\concepts\**" />
+    <Resource Include="Assets\icon.ico" />
+    <Resource Include="Assets\logo_wide.png" />
+    <Resource Include="Assets\skyline.png" />
+    <Resource Include="Assets\Fonts\Geist-Regular.ttf" />
+    <Resource Include="Assets\Fonts\Geist-Medium.ttf" />
+    <Resource Include="Assets\Fonts\Geist-SemiBold.ttf" />
+    <Resource Include="Assets\Fonts\Geist-Bold.ttf" />
+    <Resource Include="Assets\Fonts\GeistMono-Regular.ttf" />
+    <Resource Include="Assets\Fonts\GeistMono-Medium.ttf" />
+    <Resource Include="Assets\Fonts\DrukWide-Bold.ttf" />
   </ItemGroup>
-  <ItemGroup>
-    <Content Include="Web\icon.ico" />
-  </ItemGroup>
-
 
 </Project>

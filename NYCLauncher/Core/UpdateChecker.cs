@@ -29,7 +29,7 @@ namespace NYCLauncher.Core
     {
         private static readonly HttpClient _http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
         private static readonly string VERSION_URL = Secrets.VERSION_URL;
-        public const string CurrentVersion = "v1.4.3";
+        public const string CurrentVersion = "v1.0.1";
 
         public static void CleanOldFiles()
         {
@@ -118,7 +118,6 @@ namespace NYCLauncher.Core
 
             onProgress?.Invoke(100, "Restarting...");
             try { App.AppMutex?.ReleaseMutex(); App.AppMutex?.Dispose(); App.AppMutex = null; } catch { }
-            try { CefSharp.Cef.Shutdown(); } catch { }
             await Task.Delay(1500);
             Process.Start(new ProcessStartInfo
             {

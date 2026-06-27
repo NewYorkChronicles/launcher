@@ -67,7 +67,6 @@ namespace NYCLauncher.Core
                     WorkingDirectory = _settings.GameDir,
                     UseShellExecute = false
                 };
-                psi.EnvironmentVariables["NYC_LAUNCHER_AUTH"] = "1";
 
                 _gameProcess = Process.Start(psi);
                 _gameProcess.EnableRaisingEvents = true;
